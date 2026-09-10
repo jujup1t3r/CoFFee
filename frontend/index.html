@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Coffee Bean Quality Classifier</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Coffee Bean Quality Inspector</h1>
+      <p>Upload a coffee bean image to classify defects and inspect quality.</p>
+    </header>
+
+    <main class="card">
+      <div class="drop-zone" id="drop-zone">
+        <input type="file" id="file-input" accept="image/*" hidden />
+        <div class="drop-zone-prompt" id="prompt-text">
+          <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="17 8 12 3 7 8" />
+            <line x1="12" y1="3" x2="12" y2="15" />
+          </svg>
+          <p><strong>Click to browse</strong> or drag and drop an image here</p>
+          <span>Supports: JPG, PNG, BMP</span>
+        </div>
+        <img id="image-preview" class="preview-hidden" alt="Selected Preview" />
+      </div>
+
+      <div class="actions">
+        <button id="predict-btn" class="btn" disabled>Analyze Quality</button>
+        <button id="reset-btn" class="btn btn-secondary preview-hidden">Reset</button>
+      </div>
+
+      <div id="loader" class="loader preview-hidden">
+        <div class="spinner"></div>
+        <p>Running YOLO inference...</p>
+      </div>
+
+      <div id="results" class="results-card preview-hidden">
+        <div id="status-badge" class="badge"></div>
+        <div class="main-metric">
+          <h2 id="predicted-label">--</h2>
+          <span id="predicted-conf">--% Confidence</span>
+        </div>
+
+        <div class="top3-section">
+          <h3>Top Predictions</h3>
+          <div id="top3-list" class="top3-list"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
