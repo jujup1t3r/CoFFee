@@ -7,11 +7,11 @@ def main():
     # เทรนโมเดลหาตำแหน่งเมล็ดกาแฟ
     model.train(
         data="Coffee Bean.v5/data.yaml",
-        epochs=15,
-        imgsz=320,
-        batch=16,
+        epochs=30,
+        imgsz=640,
+        batch=8,
         single_cls=True,
-        cache=True,
+        cache='disk',
         project="runs/detect",
         name="bean_detector",
         device=0  # บังคับใช้ GPU ตัวที่ 0 (RTX 3050)
