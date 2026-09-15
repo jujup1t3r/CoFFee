@@ -13,12 +13,19 @@ def is_intersecting(p1, p2, line_start, line_end):
     return (ccw(p1, line_start, line_end) != ccw(p2, line_start, line_end)) and (
         ccw(p1, p2, line_start) != ccw(p1, p2, line_end)
     )
-# model = YOLO("yolov8n.pt")
-# 1. Load trained YOLO object detection model
-model = YOLO("runs/detect/train-5/weights/best.pt")
 
-video_path = "conveyor_belt.mp4"
-cap = cv2.VideoCapture(video_path)
+
+# ================= Models Initialization =================
+# Stage 1: Detector model for localization and tracking
+detector = YOLO(r"C:\CoFFee\runs\detect\runs\detect\bean_detector-6\weights\best.pt")
+
+# Stage 2: Classifier model (16 classes) for defect identification
+classifier = YOLO(r"C:\CoFFee\runs/classify\weights\best.pt")
+
+# video_path = r"C:\CoFFee\conveyor_belt.mp4"
+# cap = cv2.VideoCapture(video_path)
+
+cap = cv2.VideoCapture(0)
 
 # Virtual counting line coordinates (adjust to match camera viewpoint)
 LINE_START = (50, 400)
@@ -35,25 +42,40 @@ while cap.isOpened():
     if not ret:
         break
 
-    # Run ByteTrack multi-object tracking
-    results = model.track(
+    h_img, w_img, _ = frame.shape
+
+    # Stage 1: Run ByteTrack multi-object tracking
+    results = detector.track(
         frame, persist=True, tracker="bytetrack.yaml", verbose=False
     )
 
     if results[0].boxes and results[0].boxes.id is not None:
         boxes = results[0].boxes.xyxy.cpu().numpy()
         track_ids = results[0].boxes.id.int().cpu().tolist()
-        class_ids = results[0].boxes.cls.int().cpu().tolist()
-        names = results[0].names
 
-        for box, track_id, cls_id in zip(boxes, track_ids, class_ids):
+        for box, track_id in zip(boxes, track_ids):
             x1, y1, x2, y2 = map(int, box)
             cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
+
+            # Keep crop coordinates within valid frame boundaries
+            crop_x1 = max(0, x1)
+            crop_y1 = max(0, y1)
+            crop_x2 = min(w_img, x2)
+            crop_y2 = min(h_img, y2)
+
+            # Stage 2: Crop bean region and classify defect
+            cropped_bean = frame[crop_y1:crop_y2, crop_x1:crop_x2]
+            if cropped_bean.size > 0:
+                cls_res = classifier(cropped_bean, verbose=False)
+                top1_idx = cls_res[0].probs.top1
+                pred_class = cls_res[0].names[top1_idx]
+            else:
+                pred_class = "Unknown"
 
             # Record trajectory and predicted label history
             track = track_history[track_id]
             track.append((cx, cy))
-            class_history[track_id].append(names[cls_id])
+            class_history[track_id].append(pred_class)
 
             if len(track) > 30:
                 track.pop(0)
@@ -74,14 +96,15 @@ while cap.isOpened():
                     counted_ids.add(track_id)
 
             # Draw bounding box and identifier
-            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            color = (0, 255, 0) if pred_class.lower() == "good" else (0, 0, 255)
+            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
             cv2.putText(
                 frame,
-                f"ID:{track_id} {names[cls_id]}",
-                (x1, y1 - 5),
+                f"ID:{track_id} {pred_class}",
+                (x1, max(20, y1 - 5)),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.5,
-                (0, 255, 0),
+                color,
                 1,
             )
 
