@@ -1,5 +1,16 @@
-const API_URL = "http://localhost:8000/api/predict";
+const BACKEND_HOST = "localhost:8000";
+const API_URL = `http://${BACKEND_HOST}/api/predict`;
+const WS_URL = `ws://${BACKEND_HOST}/ws`;
 
+// DOM Elements: Realtime Dashboard
+const statTotal = document.getElementById("stat-total");
+const statGood = document.getElementById("stat-good");
+const statDefects = document.getElementById("stat-defects");
+const wsIndicator = document.getElementById("ws-indicator");
+const wsText = document.getElementById("ws-text");
+const latestEvent = document.getElementById("latest-event");
+
+// DOM Elements: Manual Classifier
 const dropZone = document.getElementById("drop-zone");
 const fileInput = document.getElementById("file-input");
 const promptText = document.getElementById("prompt-text");
@@ -11,10 +22,52 @@ const resultsCard = document.getElementById("results");
 
 let selectedFile = null;
 
-// Trigger input on zone click
+// ==================== WEBSOCKET CONNECTION ====================
+function initWebSocket() {
+  const socket = new WebSocket(WS_URL);
+
+  socket.onopen = () => {
+    wsIndicator.className = "status-dot connected";
+    wsText.textContent = "Live Stream Active";
+    console.log("[WebSocket] Connected to Inspection Backend");
+  };
+
+  socket.onmessage = (event) => {
+    const payload = JSON.parse(event.data);
+
+    if (payload.type === "init" || payload.type === "bean_detected") {
+      const stats = payload.stats;
+      statTotal.textContent = stats.total;
+      statGood.textContent = stats.good;
+      statDefects.textContent = stats.defects;
+
+      if (payload.data) {
+        const { track_id, defect_type, is_defect } = payload.data;
+        latestEvent.innerHTML = `Bean <strong>#${track_id}</strong>: <span style="color: ${
+          is_defect ? "var(--danger)" : "var(--success)"
+        };">${defect_type}</span> detected`;
+      }
+    }
+  };
+
+  socket.onclose = () => {
+    wsIndicator.className = "status-dot disconnected";
+    wsText.textContent = "Conveyor Offline";
+    console.warn("[WebSocket] Disconnected. Reconnecting in 3 seconds...");
+    setTimeout(initWebSocket, 3000);
+  };
+
+  socket.onerror = (err) => {
+    console.error("[WebSocket] Connection error:", err);
+  };
+}
+
+// Start WebSocket listener
+initWebSocket();
+
+// ==================== MANUAL PREDICTION FLOW ====================
 dropZone.addEventListener("click", () => fileInput.click());
 
-// Drag & drop handlers
 dropZone.addEventListener("dragover", (e) => {
   e.preventDefault();
   dropZone.classList.add("drag-over");
@@ -55,7 +108,6 @@ function handleFileSelect(file) {
   reader.readAsDataURL(file);
 }
 
-// Reset UI
 resetBtn.addEventListener("click", () => {
   selectedFile = null;
   fileInput.value = "";
@@ -68,7 +120,6 @@ resetBtn.addEventListener("click", () => {
   loader.classList.add("preview-hidden");
 });
 
-// Run Prediction API call
 predictBtn.addEventListener("click", async () => {
   if (!selectedFile) return;
 
@@ -90,7 +141,7 @@ predictBtn.addEventListener("click", async () => {
 
     displayResults(data);
   } catch (err) {
-    alert(`Inference failed: ${err.message}. Ensure the backend is running at ${API_URL}`);
+    alert(`Inference failed: ${err.message}. Ensure backend is running.`);
   } finally {
     loader.classList.add("preview-hidden");
     predictBtn.disabled = false;
@@ -100,16 +151,13 @@ predictBtn.addEventListener("click", async () => {
 function displayResults(data) {
   const { label, confidence, is_defective } = data.prediction;
 
-  // Status Badge
   const badge = document.getElementById("status-badge");
   badge.textContent = is_defective ? "Defective Bean" : "Healthy / Good";
   badge.className = `badge ${is_defective ? "fail" : "pass"}`;
 
-  // Metrics
   document.getElementById("predicted-label").textContent = label;
   document.getElementById("predicted-conf").textContent = `${confidence}% Confidence`;
 
-  // Top 3 Items
   const top3Container = document.getElementById("top3-list");
   top3Container.innerHTML = "";
 

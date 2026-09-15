@@ -17,16 +17,19 @@ def is_intersecting(p1, p2, line_start, line_end):
 
 # ================= Models Initialization =================
 # Stage 1: Detector model for localization and tracking
-detector = YOLO(r"C:\CoFFee\runs\detect\runs\detect\bean_detector-6\weights\best.pt")
+detector =  YOLO("runs/detect/runs/detect/bean_detector-6/weights/best.pt")
 
 # Stage 2: Classifier model (16 classes) for defect identification
-classifier = YOLO(r"C:\CoFFee\runs/classify\weights\best.pt")
+classifier = YOLO("backend/runs/classify/train-5/weights/best.pt")
 
 # video_path = r"C:\CoFFee\conveyor_belt.mp4"
 # cap = cv2.VideoCapture(video_path)
 
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
 
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
 # Virtual counting line coordinates (adjust to match camera viewpoint)
 LINE_START = (50, 400)
 LINE_END = (600, 400)
@@ -40,7 +43,7 @@ final_counts = Counter()
 while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
-        break
+        continue
 
     h_img, w_img, _ = frame.shape
 

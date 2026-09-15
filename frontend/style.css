@@ -29,24 +29,96 @@ body {
 
 .container {
   width: 100%;
-  max-width: 580px;
+  max-width: 600px;
 }
 
 header {
   text-align: center;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 
 header h1 {
-  font-size: 1.6rem;
-  margin-bottom: 8px;
+  font-size: 1.5rem;
+  margin-bottom: 6px;
 }
 
 header p {
   color: var(--text-muted);
-  font-size: 0.9rem;
+  font-size: 0.85rem;
 }
 
+/* Stats Counter Grid */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.stat-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  text-align: center;
+}
+
+.stat-card h3 {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+.stat-num {
+  font-size: 1.6rem;
+  font-weight: 700;
+}
+
+.stat-good { color: var(--success); }
+.stat-defect { color: var(--danger); }
+
+/* Live Status Strip */
+.live-banner {
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8rem;
+}
+
+.live-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.status-dot.connected {
+  background-color: var(--success);
+  box-shadow: 0 0 8px var(--success);
+}
+
+.status-dot.disconnected {
+  background-color: var(--danger);
+}
+
+.latest-event {
+  color: var(--text-muted);
+}
+
+/* Card & Upload styles */
 .card {
   background: var(--card-bg);
   border: 1px solid var(--border);
@@ -89,7 +161,7 @@ header p {
 
 #image-preview {
   width: 100%;
-  max-height: 260px;
+  max-height: 240px;
   object-fit: contain;
   border-radius: 6px;
 }
