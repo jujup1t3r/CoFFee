@@ -10,7 +10,7 @@ if __name__ == "__main__":
         imgsz=224,
         batch=16,
         workers=2,
-        device="cpu"
+        device="0"
     )
 
     print("เทรนโมเดลเสร็จสมบูรณ์!")
