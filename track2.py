@@ -33,15 +33,16 @@ except Exception as e:
 
 # ==================== LOAD MODELS ====================
 detector = YOLO("runs/detect/runs/detect/bean_detector-6/weights/best.pt")
-classifier = YOLO("backend/runs/classify/train-5/weights/best.pt")
+classifier = YOLO("runs/classify/train-2/weights/best.pt")
 
-# ==================== CAMERA & LINE SETUP ====================
-cap = cv2.VideoCapture(0)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+# ==================== VIDEO & LINE SETUP ====================
+# ใส่ชื่อไฟล์คลิป หรือ Full Path ของวิดีโอที่ต้องการทดสอบ
+VIDEO_PATH = "test_conveyor.mp4" 
+
+cap = cv2.VideoCapture(VIDEO_PATH)
 
 if not cap.isOpened():
-    print("[Error] Cannot open webcam.")
+    print(f"[Error] Cannot open video file: {VIDEO_PATH}")
     exit()
 
 LINE_START = (50, 350)
@@ -60,7 +61,7 @@ def is_skin(crop_img):
     upper_skin = np.array([25, 200, 255], dtype=np.uint8)
     mask = cv2.inRange(hsv, lower_skin, upper_skin)
     skin_ratio = cv2.countNonZero(mask) / (crop_img.shape[0] * crop_img.shape[1])
-    return skin_ratio > 0.65  # ถ้าในกรอบเป็นสีเนื้อเกิน 65% ให้ถือว่าเป็นนิ้วมือ
+    return skin_ratio > 0.65
 
 track_history = defaultdict(list)
 track_predictions = defaultdict(list)
@@ -71,9 +72,10 @@ final_counts = defaultdict(int)
 while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
+        # เมื่อคลิปเล่นจนจบ ให้วนกลับไปเริ่มเฟรมแรกใหม่
+        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
         continue
 
-    # ดัน conf ขึ้นเป็น 0.68 เพื่อตัดการเดาสุ่ม
     results = detector.track(
         frame,
         persist=True,
@@ -95,29 +97,30 @@ while cap.isOpened():
             aspect_ratio = float(w) / max(1, h)
             center_pt = (int((x1 + x2) / 2), int((y1 + y2) / 2))
 
-            # 1. กรองขนาดเมล็ดกาแฟจริง: ปรับขอบเขตให้กระชับ (กว้าง/ยาว 25 - 95 px)
-            if not (25 <= w <= 95 and 25 <= h <= 95 and 700 <= area <= 8500):
+            # 1. กรองขนาดเมล็ดกาแฟ
+            if not (25 <= w <= 140 and 25 <= h <= 140 and 600 <= area <= 18000):
                 continue
 
-            # 2. กรองสัดส่วน: เมล็ดกาแฟจะไม่เรียวยาวจนเกินไป
-            if not (0.6 <= aspect_ratio <= 1.6):
+            # 2. กรองสัดส่วน
+            if not (0.5 <= aspect_ratio <= 1.9):
                 continue
 
-            # ตัดรูปเมล็ดกาแฟ
-            crop = frame[max(0, y1):y2, max(0, x1):x2]
+            # ตัดรูปเมล็ดกาแฟ (พร้อมเพิ่ม padding 6 พิกเซล)
+            pad = 6
+            h_f, w_f = frame.shape[:2]
+            crop = frame[max(0, y1 - pad):min(h_f, y2 + pad), max(0, x1 - pad):min(w_f, x2 + pad)]
             if crop.size == 0:
                 continue
 
-            # 3. ตัดนิ้วมือด้วย Skin Mask Filter
+            # 3. ตัดนิ้วมือ
             if is_skin(crop):
                 continue
 
-            # 4. Classify โดยกำหนดเกณฑ์ความมั่นใจขั้นต่ำ
+            # 4. Classify เมล็ด
             cls_res = classifier.predict(crop, verbose=False)[0]
             top1_conf = float(cls_res.probs.top1conf.item())
             top1_cls = cls_res.names[cls_res.probs.top1]
 
-            # ถ้าความมั่นใจต่ำกว่า 60% หรือ classify ออกมาเป็น dry cherry แบบไม่มั่นใจ ให้ข้ามเฟรมนี้
             if top1_conf >= 0.60:
                 track_predictions[track_id].append(top1_cls)
 
@@ -130,8 +133,6 @@ while cap.isOpened():
                     if track_id not in counted_ids:
                         counted_ids.add(track_id)
                         classes_history = track_predictions[track_id]
-                        
-                        # โหวตหาคลาสที่ถูกทายซ้ำมากที่สุดขณะเลื่อนผ่าน
                         final_class = Counter(classes_history).most_common(1)[0][0] if classes_history else "good"
                         final_counts[final_class] += 1
 
@@ -159,7 +160,7 @@ while cap.isOpened():
     cv2.putText(frame, "Inspection Line", (LINE_START[0], LINE_START[1] - 10),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
 
-    # สรุปผลบนหน้าจอ
+    # สรุปผลบนหน้าต่าง
     y_offset = 30
     for cls_name, count in final_counts.items():
         cv2.putText(frame, f"{cls_name}: {count}", (10, y_offset),
@@ -167,7 +168,9 @@ while cap.isOpened():
         y_offset += 25
 
     cv2.imshow("Conveyor Inspection", frame)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
+    
+    # หน่วงเวลา 30ms เพื่อให้ความเร็วเท่ากับคลิปจริง (~30 FPS)
+    if cv2.waitKey(30) & 0xFF == ord('q'):
         break
 
 # ==================== CLEANUP & SUMMARY ====================
