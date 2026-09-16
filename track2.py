@@ -37,7 +37,7 @@ classifier = YOLO("runs/classify/train-2/weights/best.pt")
 
 # ==================== VIDEO / CAMERA SETUP ====================
 # สลับใช้กล้องจริง: cap = cv2.VideoCapture(0)
-VIDEO_PATH = "test2.mp4"
+VIDEO_PATH = "test3.mp4"
 cap = cv2.VideoCapture(VIDEO_PATH)
 
 if not cap.isOpened():
