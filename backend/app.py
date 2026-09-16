@@ -264,6 +264,24 @@ async def predict_coffee(file: UploadFile = File(...)):
   except Exception as e:
     raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/reset")
+async def reset_stats():
+    global bean_stats
+    bean_stats = {
+        "total": 0,
+        "good": 0,
+        "defects": 0,
+        "classes": defaultdict(int),
+        "history": []
+    }
+    
+    # แจ้งเตือนทุกหน้าจอที่เปิดอยู่ให้รีเซ็ตตัวเลขเป็น 0 ทันที
+    reset_msg = json.dumps({"type": "init", "stats": bean_stats})
+    for ws in active_websockets:
+        if loop and loop.is_running():
+            asyncio.run_coroutine_threadsafe(ws.send_text(reset_msg), loop)
+            
+    return {"status": "success", "message": "Stats reset successfully"}
 
 if __name__ == "__main__":
   import uvicorn

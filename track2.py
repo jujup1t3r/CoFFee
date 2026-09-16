@@ -35,24 +35,14 @@ except Exception as e:
 detector = YOLO("runs/detect/runs/detect/bean_detector-6/weights/best.pt")
 classifier = YOLO("runs/classify/train-2/weights/best.pt")
 
-# ==================== VIDEO & LINE SETUP ====================
-# ใส่ชื่อไฟล์คลิป หรือ Full Path ของวิดีโอที่ต้องการทดสอบ
-VIDEO_PATH = "test_conveyor.mp4" 
-
+# ==================== VIDEO / CAMERA SETUP ====================
+# สลับใช้กล้องจริง: cap = cv2.VideoCapture(0)
+VIDEO_PATH = "test2.mp4"
 cap = cv2.VideoCapture(VIDEO_PATH)
 
 if not cap.isOpened():
-    print(f"[Error] Cannot open video file: {VIDEO_PATH}")
+    print(f"[Error] Cannot open video source: {VIDEO_PATH}")
     exit()
-
-LINE_START = (50, 350)
-LINE_END = (600, 350)
-
-def ccw(A, B, C):
-    return (C[1] - A[1]) * (B[0] - A[0]) > (B[1] - A[1]) * (C[0] - A[0])
-
-def is_intersecting(A, B, C, D):
-    return ccw(A, C, D) != ccw(B, C, D) and ccw(A, B, C) != ccw(A, B, D)
 
 def is_skin(crop_img):
     """ตรวจจับเฉดสีผิวคนเพื่อตัดนิ้วมือออก"""
@@ -63,7 +53,6 @@ def is_skin(crop_img):
     skin_ratio = cv2.countNonZero(mask) / (crop_img.shape[0] * crop_img.shape[1])
     return skin_ratio > 0.65
 
-track_history = defaultdict(list)
 track_predictions = defaultdict(list)
 counted_ids = set()
 final_counts = defaultdict(int)
@@ -72,7 +61,6 @@ final_counts = defaultdict(int)
 while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
-        # เมื่อคลิปเล่นจนจบ ให้วนกลับไปเริ่มเฟรมแรกใหม่
         cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
         continue
 
@@ -80,8 +68,8 @@ while cap.isOpened():
         frame,
         persist=True,
         tracker="bytetrack.yaml",
-        conf=0.68,
-        iou=0.4,
+        conf=0.45,
+        iou=0.65,
         verbose=False
     )
 
@@ -95,28 +83,23 @@ while cap.isOpened():
             h = y2 - y1
             area = w * h
             aspect_ratio = float(w) / max(1, h)
-            center_pt = (int((x1 + x2) / 2), int((y1 + y2) / 2))
 
-            # 1. กรองขนาดเมล็ดกาแฟ
-            if not (25 <= w <= 140 and 25 <= h <= 140 and 600 <= area <= 18000):
+            # 1. กรองขนาดเมล็ดกาแฟจริง
+            if not (15 <= w <= 160 and 15 <= h <= 160 and 300 <= area <= 22000):
                 continue
 
             # 2. กรองสัดส่วน
             if not (0.5 <= aspect_ratio <= 1.9):
                 continue
 
-            # ตัดรูปเมล็ดกาแฟ (พร้อมเพิ่ม padding 6 พิกเซล)
+            # ตัดรูปพร้อม padding
             pad = 6
             h_f, w_f = frame.shape[:2]
             crop = frame[max(0, y1 - pad):min(h_f, y2 + pad), max(0, x1 - pad):min(w_f, x2 + pad)]
-            if crop.size == 0:
+            if crop.size == 0 or is_skin(crop):
                 continue
 
-            # 3. ตัดนิ้วมือ
-            if is_skin(crop):
-                continue
-
-            # 4. Classify เมล็ด
+            # 3. จำแนกประเภท
             cls_res = classifier.predict(crop, verbose=False)[0]
             top1_conf = float(cls_res.probs.top1conf.item())
             top1_cls = cls_res.names[cls_res.probs.top1]
@@ -124,54 +107,53 @@ while cap.isOpened():
             if top1_conf >= 0.60:
                 track_predictions[track_id].append(top1_cls)
 
-            # ตรวจสอบการตัดผ่านเส้นนับ
-            prev_points = track_history[track_id]
-            if len(prev_points) > 0:
-                prev_pt = prev_points[-1]
+            # 4. ลอจิกนับทันทีเมื่อตรวจจับนิ่งพอ (อยู่นิ่งหรือขยับก็ตรวจได้ โดยดูจากประวัติ 5 เฟรม)
+            if track_id not in counted_ids and len(track_predictions[track_id]) >= 5:
+                counted_ids.add(track_id)
+                
+                # โหวตหาคลาสหลัก
+                final_class = Counter(track_predictions[track_id]).most_common(1)[0][0]
+                final_counts[final_class] += 1
 
-                if is_intersecting(prev_pt, center_pt, LINE_START, LINE_END):
-                    if track_id not in counted_ids:
-                        counted_ids.add(track_id)
-                        classes_history = track_predictions[track_id]
-                        final_class = Counter(classes_history).most_common(1)[0][0] if classes_history else "good"
-                        final_counts[final_class] += 1
+                payload_event = {
+                    "track_id": int(track_id),
+                    "defect_type": str(final_class),
+                    "timestamp": time.time(),
+                    "is_defect": str(final_class).lower() != "good"
+                }
+                mqtt_client.publish(TOPIC_EVENT, json.dumps(payload_event))
+                print(f"[MQTT] Confirmed Bean #{track_id} -> {final_class}")
 
-                        payload_event = {
-                            "track_id": int(track_id),
-                            "defect_type": str(final_class),
-                            "timestamp": time.time(),
-                            "is_defect": str(final_class).lower() != "good"
-                        }
-                        mqtt_client.publish(TOPIC_EVENT, json.dumps(payload_event))
-                        print(f"[MQTT] Event Sent: Bean #{track_id} -> {final_class}")
-
-            track_history[track_id].append(center_pt)
-            if len(track_history[track_id]) > 25:
-                track_history[track_id].pop(0)
-
+            # กำหนดสีกรอบ: เมล็ดที่ยืนยันแล้ว vs กำลังวิเคราะห์
             cur_label = track_predictions[track_id][-1] if track_predictions[track_id] else "detecting..."
-            box_color = (0, 255, 0) if cur_label.lower() == "good" else (0, 0, 255)
+            if track_id in counted_ids:
+                box_color = (0, 255, 0) if cur_label.lower() == "good" else (0, 0, 255)
+                status_txt = f"ID:{track_id} {cur_label} (Counted)"
+            else:
+                box_color = (255, 255, 0)
+                status_txt = f"ID:{track_id} Analyzing..."
+
             cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
-            cv2.putText(frame, f"ID:{track_id} {cur_label}", (x1, y1 - 8),
+            cv2.putText(frame, status_txt, (x1, y1 - 8),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, box_color, 2)
 
-    # วาดเส้นตรวจสอบ
-    cv2.line(frame, LINE_START, LINE_END, (0, 0, 255), 2)
-    cv2.putText(frame, "Inspection Line", (LINE_START[0], LINE_START[1] - 10),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-
-    # สรุปผลบนหน้าต่าง
+    # สรุปยอดรวมบนหน้าจอ
     y_offset = 30
     for cls_name, count in final_counts.items():
         cv2.putText(frame, f"{cls_name}: {count}", (10, y_offset),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
         y_offset += 25
 
-    cv2.imshow("Conveyor Inspection", frame)
-    
-    # หน่วงเวลา 30ms เพื่อให้ความเร็วเท่ากับคลิปจริง (~30 FPS)
-    if cv2.waitKey(30) & 0xFF == ord('q'):
+    cv2.imshow("Stationary & Moving Bean Inspection", frame)
+    key = cv2.waitKey(30) & 0xFF
+    if key == ord('q'):
         break
+    elif key == ord('r'):
+        # กดปุ่ม 'r' บนคีย์บอร์ดเพื่อรีเซ็ตในระหว่างรัน
+        counted_ids.clear()
+        track_predictions.clear()
+        final_counts.clear()
+        print("[System] Detection counts & Track IDs cleared!")
 
 # ==================== CLEANUP & SUMMARY ====================
 summary_payload = {

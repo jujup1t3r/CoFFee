@@ -173,3 +173,27 @@ function displayResults(data) {
 
   resultsCard.classList.remove("preview-hidden");
 }
+
+// ==================== RESET STATS BUTTON ====================
+const resetStatsBtn = document.getElementById("reset-stats-btn");
+
+if (resetStatsBtn) {
+  resetStatsBtn.addEventListener("click", async () => {
+    try {
+      const res = await fetch(`http://${BACKEND_HOST}/api/reset`, {
+        method: "POST"
+      });
+
+      if (res.ok) {
+        // เคลียร์ค่าตัวเลขสถิติบนหน้าจอทันที
+        statTotal.textContent = "0";
+        statGood.textContent = "0";
+        statDefects.textContent = "0";
+        latestEvent.innerHTML = "<em>Waiting for detections...</em>";
+        console.log("[System] Stats reset successfully");
+      }
+    } catch (err) {
+      console.error("Failed to reset stats:", err);
+    }
+  });
+}
